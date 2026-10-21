@@ -187,6 +187,7 @@ fun LiveScreen() {
     val state = LocalAppState.current
     val nav = LocalNav.current
     val toast = toast()
+    val ctx = LocalContext.current
     val units = state.units
     var filter by remember { mutableStateOf("All") }
     var query by remember { mutableStateOf("") }
@@ -199,10 +200,21 @@ fun LiveScreen() {
 
     Box(Modifier.fillMaxSize().background(C.bg)) {
         var refreshTick by remember { mutableIntStateOf(0) }
+        var me by remember { mutableStateOf<org.osmdroid.util.GeoPoint?>(null) }
+        LaunchedEffect(true) {
+            if (androidx.core.content.ContextCompat.checkSelfPermission(ctx, android.Manifest.permission.ACCESS_FINE_LOCATION) != android.content.pm.PackageManager.PERMISSION_GRANTED &&
+                androidx.core.content.ContextCompat.checkSelfPermission(ctx, android.Manifest.permission.ACCESS_COARSE_LOCATION) != android.content.pm.PackageManager.PERMISSION_GRANTED) return@LaunchedEffect
+            val lm = ctx.getSystemService(android.location.LocationManager::class.java)
+            while (true) {
+                runCatching { listOf(android.location.LocationManager.GPS_PROVIDER, android.location.LocationManager.NETWORK_PROVIDER, android.location.LocationManager.PASSIVE_PROVIDER).mapNotNull { @Suppress("MissingPermission") lm.getLastKnownLocation(it) }.maxByOrNull { it.time } }
+                    .getOrNull()?.let { me = org.osmdroid.util.GeoPoint(it.latitude, it.longitude) }
+                delay(5000)
+            }
+        }
         LaunchedEffect(refreshTick) { if (refreshTick > 0 && state.isLive) { toast("Refreshing…"); state.refreshLive(); toast(state.liveError ?: "Positions updated") } }
         val tealArgb = C.teal.toArgb()
         CurMap(units = units.filter { it.lat != 0.0 || it.lng != 0.0 }, geofence = if (state.isLive) null else MockData.northDepot to 520.0,
-            extraGeofences = state.geofences.map { Triple(org.osmdroid.util.GeoPoint(it.lat, it.lng), it.radiusM.toDouble(), tealArgb) }, onUnitClick = { nav.navigate("unit/${it.id}") })
+            extraGeofences = state.geofences.map { Triple(org.osmdroid.util.GeoPoint(it.lat, it.lng), it.radiusM.toDouble(), tealArgb) }, myLocation = me, onUnitClick = { nav.navigate("unit/${it.id}") })
         Column(Modifier.align(Alignment.TopEnd).windowInsetsPadding(WindowInsets.statusBars).padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             MapTool(Icons.layers, "Map or satellite") { toast("Satellite view") }
             MapTool(Icons.refresh, "Refresh positions") { refreshTick++ }
@@ -311,7 +323,7 @@ fun TripsScreen(id: String?) {
         val cal = java.util.Calendar.getInstance().apply { add(java.util.Calendar.DAY_OF_YEAR, -dayOffset); set(java.util.Calendar.HOUR_OF_DAY, 0); set(java.util.Calendar.MINUTE, 0); set(java.util.Calendar.SECOND, 0) }
         val from = cal.timeInMillis; val to = from + 86400000L - 1
         points = runCatching { com.curtrack.app.data.Broker.history(token, u.id, from, to) }.getOrElse { toast(it.message ?: "Could not load trail"); emptyList() }
-        liveTrips = if (state.liveDriverIds.isNotEmpty()) runCatching { com.curtrack.app.data.Broker.trips(token, state.liveDriverIds.first(), from, to) }.getOrDefault(emptyList()) else deriveTrips(points)
+        liveTrips = if (state.liveDriverIds.isNotEmpty()) runCatching { com.curtrack.app.data.Broker.trips(token, state.liveDriverIds.first(), from, to) }.getOrDefault(emptyList()) else com.curtrack.app.data.Analytics.deriveTrips(points)
         loading = false
     }
     LaunchedEffect(playing) { while (playing) { delay(60); t = (t + 0.012f) % 1f } }
@@ -363,28 +375,6 @@ fun TripsScreen(id: String?) {
             Between { Sub("${speeds.count { it > limit }} samples above ${limit.toInt()} km/h"); Mono("max ${state.speed(speeds.maxOrNull()?.toInt() ?: 0)}", color = C.amber) }
         }
     }
-}
-
-/** No driver on the account → derive trips from the trail: runs of movement separated by ≥10 min stopped. */
-private fun deriveTrips(points: List<com.curtrack.app.data.TrailPoint>): List<com.curtrack.app.data.Trip> {
-    if (points.size < 2) return emptyList()
-    val fmt = SimpleDateFormat("HH:mm", Locale.getDefault())
-    val out = mutableListOf<com.curtrack.app.data.Trip>()
-    var start = -1; var lastMove = 0L
-    fun haversine(a: org.osmdroid.util.GeoPoint, b: org.osmdroid.util.GeoPoint) = a.distanceToAsDouble(b) / 1000.0
-    fun close(end: Int) {
-        if (start < 0 || end <= start) return
-        val seg = points.subList(start, end + 1)
-        val km = seg.zipWithNext { p, q -> haversine(p.point, q.point) }.sum()
-        if (km >= 0.3) out += com.curtrack.app.data.Trip("d${out.size}", "${fmt.format(Date(seg.first().at))} → ${fmt.format(Date(seg.last().at))}", seg.first().address.ifBlank { "Start" }, seg.last().address.ifBlank { "End" }, Math.round(km * 10) / 10.0, seg.maxOf { it.speed }, "${((seg.last().at - seg.first().at) / 60000)} min", 0)
-        start = -1
-    }
-    points.forEachIndexed { i, p ->
-        if (p.speed > 2) { if (start < 0) start = i; lastMove = p.at }
-        else if (start >= 0 && p.at - lastMove > 10 * 60000L) close(i)
-    }
-    close(points.lastIndex)
-    return out
 }
 
 /* ───────────────────────── Command confirmation sheet (§2.18) ───────────────────────── */

@@ -52,13 +52,13 @@ fun CurMap(
     val c = C
     val ctx = LocalContext.current
     val teal = c.teal.toArgb(); val amber = c.amber.toArgb(); val ink = c.ink.toArgb(); val bg2 = c.bg2.toArgb(); val grey = c.offlineGrey.toArgb(); val onAccent = c.onAccent.toArgb()
-    val gfColor = (geofenceColor ?: c.teal).toArgb(); val violet = c.violet.toArgb()
+    val gfColor = (geofenceColor ?: c.teal).toArgb(); val violet = android.graphics.Color.rgb(37, 99, 235) // "you are here" blue
     AndroidView(
         modifier = modifier.fillMaxSize(),
         factory = { context ->
             org.osmdroid.config.Configuration.getInstance().userAgentValue = context.packageName
             MapView(context).apply {
-                setTileSource(if (c.isDark) CARTO_DARK else CARTO_LIGHT)
+                setTileSource(CARTO_LIGHT)
                 setMultiTouchControls(interactive)
                 zoomController.setVisibility(org.osmdroid.views.CustomZoomButtonsController.Visibility.NEVER)
                 isTilesScaledToDpi = true
@@ -68,7 +68,7 @@ fun CurMap(
         update = { map ->
             map.overlays.clear()
             // Proper dark/light basemaps (CARTO, free with attribution) instead of a colour filter — README §2.3
-            val want = if (c.isDark) CARTO_DARK else CARTO_LIGHT
+            val want = CARTO_LIGHT // readable in sunlight; dark style kept for a future setting
             if (map.tileProvider.tileSource !== want) map.setTileSource(want)
             map.overlayManager.tilesOverlay.setColorFilter(null)
             map.overlayManager.tilesOverlay.loadingBackgroundColor = bg2

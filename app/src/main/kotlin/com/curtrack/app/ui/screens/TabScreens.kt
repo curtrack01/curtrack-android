@@ -87,14 +87,18 @@ private fun AlertCard(a: Alert, handled: Boolean, onHandled: () -> kotlin.Unit, 
 fun ReportsScreen() {
     val nav = LocalNav.current
     val toast = toast()
-    Screen(kicker = "Run on any unit or group", title = "Reports", tab = Tab.REPORTS, onTab = { nav.goTab(it) }, trailing = { IconButton(Icons.clock, "Scheduled reports") { toast("Scheduled reports") } }) {
-        Card(fill = C.card2, gap = 10.dp, onClick = { nav.navigate("report/Mileage") }) {
+    val state = LocalAppState.current
+    val live = state.isLive
+    val types = if (live) MockData.reportTypes.filter { it.name in setOf("Trip summary", "Mileage", "Idle", "Speed limit", "Start / stop") } else MockData.reportTypes
+    Screen(kicker = if (live) "PDF · send via WhatsApp" else "Run on any unit or group", title = "Reports", tab = Tab.REPORTS, onTab = { nav.goTab(it) }, trailing = { IconButton(Icons.clock, "Scheduled reports") { toast(if (live) "Scheduled reports are coming" else "Scheduled reports") } }) {
+        if (!live) Card(fill = C.card2, gap = 10.dp, onClick = { nav.navigate("report/Mileage") }) {
             Kicker("Saved")
             Between { Column { Title("Weekly fleet mileage"); Sub("Every Monday 06:00 · emailed as PDF") }; Chevron() }
         }
+        if (live) Card(fill = C.card2, gap = 6.dp) { Kicker("How it works"); Sub("Reports are computed from your unit's position history. Pick a type, a period and a unit, then send the PDF to WhatsApp or any app.") }
         Card {
             Kicker("Report types")
-            MockData.reportTypes.forEachIndexed { i, r ->
+            types.forEachIndexed { i, r ->
                 ListRow(last = i == MockData.reportTypes.lastIndex, onClick = { nav.navigate("report/${r.name}") }, avatar = { Avatar(C.amber) { Icon(Icons.chart, null, Modifier.size(21.dp)) } }) { Title(r.name); Sub(r.description) }
             }
         }
@@ -104,6 +108,7 @@ fun ReportsScreen() {
 @Composable
 fun ReportScreen(name: String) {
     val state = LocalAppState.current
+    if (state.isLive) { LiveReportScreen(name); return }
     val nav = LocalNav.current
     val toast = toast()
     val fleet = state.fleetScope
@@ -127,6 +132,64 @@ fun ReportScreen(name: String) {
             }
         }
         PrimaryButton("Email this report") { toast("Emailed to ${state.session.userId}@curtrack") }
+    }
+}
+
+@Composable
+fun LiveReportScreen(name: String) {
+    val state = LocalAppState.current
+    val nav = LocalNav.current
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val toast = toast()
+    val ranges = listOf("Today" to 1, "7 days" to 7, "30 days" to 30)
+    var range by remember { mutableStateOf("7 days") }
+    var unitId by remember { mutableStateOf(state.units.firstOrNull()?.id ?: "") }
+    var summary by remember { mutableStateOf<com.curtrack.app.data.Analytics.Summary?>(null) }
+    var loading by remember { mutableStateOf(false) }
+    var err by remember { mutableStateOf<String?>(null) }
+    val unit = state.unit(unitId)
+    LaunchedEffect(range, unitId) {
+        val token = state.liveToken ?: return@LaunchedEffect
+        loading = true; err = null
+        val days = ranges.first { it.first == range }.second
+        val cal = java.util.Calendar.getInstance().apply { add(java.util.Calendar.DAY_OF_YEAR, -(days - 1)); set(java.util.Calendar.HOUR_OF_DAY, 0); set(java.util.Calendar.MINUTE, 0); set(java.util.Calendar.SECOND, 0) }
+        summary = runCatching { com.curtrack.app.data.Analytics.summarise(com.curtrack.app.data.Broker.history(token, unitId, cal.timeInMillis, System.currentTimeMillis())) }.getOrElse { err = it.message; null }
+        loading = false
+    }
+    fun send(whatsapp: Boolean) {
+        val s = summary ?: return
+        runCatching { com.curtrack.app.report.PdfReport.share(ctx, com.curtrack.app.report.PdfReport.build(ctx, name, unit, range, s, state.session.userId), whatsapp) }
+            .onFailure { toast("Could not create the PDF: ${it.message}") }
+    }
+    Screen(kicker = "$range · ${unit.name}", title = name, onBack = { nav.popBackStack() }, tab = Tab.REPORTS, onTab = { nav.goTab(it) }, trailing = { IconButton(Icons.share, "Share PDF") { send(false) } }) {
+        ChipRow(ranges.map { it.first }, range) { range = it }
+        if (state.units.size > 1) ChipRow(state.units.map { it.name }, unit.name) { n -> state.units.firstOrNull { it.name == n }?.let { unitId = it.id } }
+        if (loading) Sub("Reading position history from the platform…", Modifier.fillMaxWidth().padding(vertical = 12.dp), align = TextAlign.Center)
+        err?.let { Card(fill = C.card2) { Sub(it, color = C.red) } }
+        summary?.let { s ->
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) { StatTile("%.1f".format(s.km), "km driven"); StatTile("${s.trips}", "trips") }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) { StatTile("${s.idleMin} m", "idle time"); StatTile("${s.speedEvents}", "speed events", if (s.speedEvents > 0) C.amber else null) }
+            if (s.days.size > 1) Card {
+                Kicker("By day")
+                Sparkline(s.days.map { it.km.toFloat() }, 74.dp, highlight = { i, _ -> i == s.days.indices.maxByOrNull { d -> s.days[d].km } })
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { s.days.forEach { Mono(it.label.take(3)) } }
+            }
+            Card {
+                Kicker(when (name) { "Idle" -> "Idle periods"; "Speed limit" -> "Above 60 km/h"; "Start / stop" -> "Ignition events"; else -> "Trips" })
+                val rows: List<Triple<String, String, String>> = when (name) {
+                    "Idle" -> s.idle.map { Triple("${it.from} → ${it.to}", it.address, "${it.minutes} min") }
+                    "Speed limit" -> s.speeding.map { Triple(it.time, it.address, "${it.speed} km/h") }
+                    "Start / stop" -> s.ignition.map { Triple(it.first, it.second, "") }
+                    "Mileage" -> s.days.map { Triple(it.label, "${it.trips} trips · max ${it.maxSpeed} km/h", state.km(it.km)) }
+                    else -> s.tripList.map { Triple(it.span, "${it.from} → ${it.to}", state.km(it.km)) }
+                }
+                if (rows.isEmpty()) Sub("Nothing in this period.")
+                rows.take(40).forEachIndexed { i, (a, b, c) -> ListRow(last = i == rows.lastIndex || i == 39, trailing = { Mono(c, 12, color = C.ink) }) { Title(a, 14); Sub(b, maxLines = 1) } }
+                if (rows.size > 40) Sub("… and ${rows.size - 40} more in the PDF")
+            }
+            PrimaryButton("Send PDF via WhatsApp", icon = Icons.chat) { send(true) }
+            SecondaryButton("Share PDF with another app", icon = Icons.share) { send(false) }
+        }
     }
 }
 
