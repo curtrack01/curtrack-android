@@ -33,7 +33,10 @@ jobs:
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
-          echo "$KEYSTORE_BASE64" | base64 -d > app/curtrack-release.jks
+          echo "secret lengths — KEYSTORE_BASE64:${#KEYSTORE_BASE64} KEYSTORE_PASSWORD:${#KEYSTORE_PASSWORD} KEY_ALIAS:${#KEY_ALIAS} KEY_PASSWORD:${#KEY_PASSWORD}"
+          for v in KEYSTORE_BASE64 KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do [ -n "${!v}" ] || { echo "::error::Secret $v is empty or missing — add it under Settings → Secrets and variables → Actions → Repository secrets"; exit 1; }; done
+          echo "$KEYSTORE_BASE64" | tr -d ' \n\r' | base64 -d > app/curtrack-release.jks
+          echo "keystore bytes: $(wc -c < app/curtrack-release.jks)"
           printf 'storeFile=curtrack-release.jks\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' "$KEYSTORE_PASSWORD" "$KEY_ALIAS" "$KEY_PASSWORD" > keystore.properties
 
       - name: Build signed release APK
