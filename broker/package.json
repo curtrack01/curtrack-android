@@ -1,0 +1,15 @@
+{
+  "name": "broker",
+  "version": "1.0.0",
+  "description": "Thin server between the CurTrack app and the iTrackGPS API. Holds the dealer API key, maps app users to their units (ESN) and drivers, issues session tokens, and returns data in the app's shape. Also serves `/app/version.json` for the in-app updater.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "wrangler": "^3.114.0"
+  }
+}

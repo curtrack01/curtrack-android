@@ -17,6 +17,15 @@ in-app updater.
 | GET | `/drivers/{id}` | driver record |
 | GET | `/app/version.json` | updater manifest (proxied from the repo) |
 
+## Deploy
+```
+cd broker && npm install
+export CLOUDFLARE_API_TOKEN=… CLOUDFLARE_ACCOUNT_ID=…
+npx wrangler deploy
+echo -n "<value>" | npx wrangler secret put ITRACK_API_KEY   # likewise SESSION_SECRET, USERS_JSON
+```
+Live at https://curtrack-broker.curtrack01.workers.dev
+
 ## Secrets
 Set in Cloudflare (the deploy workflow pushes them from GitHub secrets of the same name):
 - `ITRACK_API_KEY` — iTrackGPS key
