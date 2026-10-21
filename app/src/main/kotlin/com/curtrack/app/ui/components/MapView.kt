@@ -17,7 +17,6 @@ import androidx.compose.ui.viewinterop.AndroidView
 import com.curtrack.app.data.Unit
 import com.curtrack.app.data.UnitStatus
 import com.curtrack.app.ui.theme.C
-import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.util.BoundingBox
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
@@ -36,7 +35,7 @@ fun CurMap(
     units: List<Unit> = emptyList(),
     center: GeoPoint? = null,
     zoom: Double = 13.0,
-    fitUnits: Boolean = units.size > 1,
+    fitUnits: Boolean = units.isNotEmpty(),
     interactive: Boolean = true,
     geofence: Pair<GeoPoint, Double>? = null,
     geofenceColor: androidx.compose.ui.graphics.Color? = null,
@@ -45,17 +44,21 @@ fun CurMap(
     playhead: GeoPoint? = null,
     onUnitClick: ((Unit) -> kotlin.Unit)? = null,
     onMapClick: ((GeoPoint) -> kotlin.Unit)? = null,
+    extraGeofences: List<Triple<GeoPoint, Double, Int>> = emptyList(),
+    route: List<GeoPoint>? = null,
+    myLocation: GeoPoint? = null,
+    fitAll: Boolean = false,
 ) {
     val c = C
     val ctx = LocalContext.current
     val teal = c.teal.toArgb(); val amber = c.amber.toArgb(); val ink = c.ink.toArgb(); val bg2 = c.bg2.toArgb(); val grey = c.offlineGrey.toArgb(); val onAccent = c.onAccent.toArgb()
-    val gfColor = (geofenceColor ?: c.teal).toArgb()
+    val gfColor = (geofenceColor ?: c.teal).toArgb(); val violet = c.violet.toArgb()
     AndroidView(
         modifier = modifier.fillMaxSize(),
         factory = { context ->
             org.osmdroid.config.Configuration.getInstance().userAgentValue = context.packageName
             MapView(context).apply {
-                setTileSource(TileSourceFactory.MAPNIK)
+                setTileSource(if (c.isDark) CARTO_DARK else CARTO_LIGHT)
                 setMultiTouchControls(interactive)
                 zoomController.setVisibility(org.osmdroid.views.CustomZoomButtonsController.Visibility.NEVER)
                 isTilesScaledToDpi = true
@@ -64,16 +67,22 @@ fun CurMap(
         },
         update = { map ->
             map.overlays.clear()
-            // Dark-theme tile filter (invert + desaturate) — README §2.3
-            if (c.isDark) {
-                val cm = android.graphics.ColorMatrix(floatArrayOf(
-                    -0.62f, -0.19f, -0.05f, 0f, 220f,
-                    -0.19f, -0.62f, -0.05f, 0f, 220f,
-                    -0.19f, -0.19f, -0.48f, 0f, 220f,
-                    0f, 0f, 0f, 1f, 0f,
-                ))
-                map.overlayManager.tilesOverlay.setColorFilter(android.graphics.ColorMatrixColorFilter(cm))
-            } else map.overlayManager.tilesOverlay.setColorFilter(null)
+            // Proper dark/light basemaps (CARTO, free with attribution) instead of a colour filter — README §2.3
+            val want = if (c.isDark) CARTO_DARK else CARTO_LIGHT
+            if (map.tileProvider.tileSource !== want) map.setTileSource(want)
+            map.overlayManager.tilesOverlay.setColorFilter(null)
+            map.overlayManager.tilesOverlay.loadingBackgroundColor = bg2
+            map.overlayManager.tilesOverlay.loadingLineColor = c.line.toArgb()
+            map.overlays.add(org.osmdroid.views.overlay.CopyrightOverlay(ctx).apply { setTextColor(c.dim.toArgb()) })
+            extraGeofences.forEach { (gp, r, color) ->
+                map.overlays.add(Polygon(map).apply {
+                    points = Polygon.pointsAsCircle(gp, r)
+                    outlinePaint.color = color; outlinePaint.strokeWidth = 3f
+                    fillPaint.color = AColor.argb(26, AColor.red(color), AColor.green(color), AColor.blue(color))
+                })
+            }
+            route?.let { map.overlays.add(Polyline(map).apply { setPoints(it); outlinePaint.color = violet; outlinePaint.strokeWidth = 10f; outlinePaint.alpha = 220 }) }
+            myLocation?.let { map.overlays.add(Marker(map).apply { position = it; icon = BitmapDrawable(ctx.resources, dotBitmap(ctx, 18, violet, bg2)); setAnchor(0.5f, 0.5f); title = "You" }) }
 
             geofence?.let { (gp, r) ->
                 val poly = Polygon(map).apply {
@@ -106,9 +115,13 @@ fun CurMap(
                 }
             })
             map.invalidate()
-            if (fitUnits && units.isNotEmpty()) {
+            if (fitAll) {
+                val pts = units.map { GeoPoint(it.lat, it.lng) } + (route ?: emptyList()) + listOfNotNull(myLocation) + trail
+                if (pts.size > 1) { val bb = BoundingBox.fromGeoPointsSafe(pts); map.post { map.zoomToBoundingBox(bb.increaseByScale(1.3f), false) } }
+                else if (pts.size == 1) { map.controller.setZoom(zoom); map.controller.setCenter(pts[0]) }
+            } else if (fitUnits && units.isNotEmpty()) {
                 val bb = BoundingBox.fromGeoPointsSafe(units.map { GeoPoint(it.lat, it.lng) })
-                map.post { map.zoomToBoundingBox(bb.increaseByScale(1.35f), false) }
+                map.post { if (units.size == 1) { map.controller.setZoom(15.0); map.controller.setCenter(GeoPoint(units[0].lat, units[0].lng)) } else map.zoomToBoundingBox(bb.increaseByScale(1.35f), false) }
             } else if (trail.size > 1 && center == null) {
                 val bb = BoundingBox.fromGeoPointsSafe(trail)
                 map.post { map.zoomToBoundingBox(bb.increaseByScale(1.2f), false) }
@@ -119,6 +132,11 @@ fun CurMap(
         },
     )
 }
+
+private val CARTO_DARK = org.osmdroid.tileprovider.tilesource.XYTileSource("CartoDark", 0, 20, 256, ".png",
+    arrayOf("https://a.basemaps.cartocdn.com/dark_all/", "https://b.basemaps.cartocdn.com/dark_all/", "https://c.basemaps.cartocdn.com/dark_all/"), "© OpenStreetMap contributors © CARTO")
+private val CARTO_LIGHT = org.osmdroid.tileprovider.tilesource.XYTileSource("CartoVoyager", 0, 20, 256, ".png",
+    arrayOf("https://a.basemaps.cartocdn.com/rastertiles/voyager/", "https://b.basemaps.cartocdn.com/rastertiles/voyager/", "https://c.basemaps.cartocdn.com/rastertiles/voyager/"), "© OpenStreetMap contributors © CARTO")
 
 /** 38dp status circle with mono speed, heading arrow when moving, name chip below (README §2.3). */
 private fun markerBitmap(ctx: android.content.Context, u: Unit, fill: Int, text: Int, chipBg: Int, chipText: Int, line: Int): Bitmap {

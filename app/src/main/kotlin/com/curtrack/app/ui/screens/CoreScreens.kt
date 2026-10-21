@@ -32,6 +32,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -90,7 +91,7 @@ fun HomeScreen() {
     val day = remember { SimpleDateFormat("EEEE · H:mm", Locale.getDefault()).format(Date()) }
 
     Screen(kicker = day, title = "Good morning, ${state.session.firstName}", tab = Tab.HOME, onTab = { nav.goTab(it) },
-        trailing = { IconButton(Icons.plus, "New geofence") { nav.navigate("geofence") } }) {
+        trailing = { IconButton(Icons.plus, "New geofence") { nav.navigate("geofence?unit=${units.firstOrNull()?.id ?: ""}") } }) {
 
         update?.let { u ->
             Card(border = C.amber.copy(alpha = 0.6f), gap = 10.dp) {
@@ -174,7 +175,7 @@ fun HomeScreen() {
         Card(fill = C.card2) {
             Kicker("Quick actions")
             TwoUp { SecondaryButton("Share location", Icons.share) { nav.navigate("share") }; SecondaryButton("Run report", Icons.chart) { if (live) nav.navigate("platform") else nav.goTab(Tab.REPORTS) } }
-            TwoUp { SecondaryButton("Find my car", Icons.target) { units.firstOrNull()?.let { nav.navigate("findmycar/${it.id}") } }; SecondaryButton("New geofence", Icons.plus) { if (live) nav.navigate("platform") else nav.navigate("geofence") } }
+            TwoUp { SecondaryButton("Find my car", Icons.target) { units.firstOrNull()?.let { nav.navigate("findmycar/${it.id}") } }; SecondaryButton("New geofence", Icons.plus) { nav.navigate("geofence?unit=${units.firstOrNull()?.id ?: ""}") } }
         }
     }
 }
@@ -197,11 +198,15 @@ fun LiveScreen() {
     }
 
     Box(Modifier.fillMaxSize().background(C.bg)) {
-        CurMap(units = units.filter { it.lat != 0.0 || it.lng != 0.0 }, geofence = if (state.isLive) null else MockData.northDepot to 520.0, onUnitClick = { nav.navigate("unit/${it.id}") })
+        var refreshTick by remember { mutableIntStateOf(0) }
+        LaunchedEffect(refreshTick) { if (refreshTick > 0 && state.isLive) { toast("Refreshing…"); state.refreshLive(); toast(state.liveError ?: "Positions updated") } }
+        val tealArgb = C.teal.toArgb()
+        CurMap(units = units.filter { it.lat != 0.0 || it.lng != 0.0 }, geofence = if (state.isLive) null else MockData.northDepot to 520.0,
+            extraGeofences = state.geofences.map { Triple(org.osmdroid.util.GeoPoint(it.lat, it.lng), it.radiusM.toDouble(), tealArgb) }, onUnitClick = { nav.navigate("unit/${it.id}") })
         Column(Modifier.align(Alignment.TopEnd).windowInsetsPadding(WindowInsets.statusBars).padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             MapTool(Icons.layers, "Map or satellite") { toast("Satellite view") }
-            MapTool(Icons.target, "Recentre") { toast("Centred on all units") }
-            MapTool(Icons.plus, "Add geofence") { if (state.isLive) nav.navigate("platform") else nav.navigate("geofence") }
+            MapTool(Icons.refresh, "Refresh positions") { refreshTick++ }
+            MapTool(Icons.plus, "Add geofence") { nav.navigate("geofence?unit=${units.firstOrNull()?.id ?: ""}") }
         }
         val sheetH = when (detent) { 0 -> 118.dp; 1 -> 520.dp; else -> 700.dp }
         Column(
@@ -251,7 +256,7 @@ fun UnitScreen(id: String?) {
                     StatGrid(Triple(u.speed.toString(), if (state.distanceUnit == "mi") "mph" else "km/h", null), Triple(if (u.ignition) "ON" else "OFF", "Ignition", null), Triple(if (u.battery < 0) "—" else if (live) "${u.battery}V" else "${u.battery}%", "Battery", null), Triple(if (u.odometer >= 1000) "${u.odometer / 1000}k" else "${u.odometer}", if (live) "km" else "Odometer", null))
                     TwoUp {
                         PrimaryButton("Trail & trips", Icons.play) { nav.navigate("trips/${u.id}") }
-                        SecondaryButton("Directions", Icons.target) { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("google.navigation:q=${u.lat},${u.lng}")).apply { setPackage("com.google.android.apps.maps") }.let { i -> if (i.resolveActivity(ctx.packageManager) != null) i else Intent(Intent.ACTION_VIEW, Uri.parse("geo:${u.lat},${u.lng}?q=${u.lat},${u.lng}")) }) }
+                        SecondaryButton("Directions", Icons.target) { nav.navigate("directions/${u.id}") }
                     }
                 }
             }

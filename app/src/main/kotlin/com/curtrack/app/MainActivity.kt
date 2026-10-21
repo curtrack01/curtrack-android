@@ -62,7 +62,6 @@ private fun AppNav(nav: NavHostController, state: AppState) {
         composable("alerts") { AlertsScreen() }
         composable("reports") { ReportsScreen() }
         composable("report/{name}") { ReportScreen(it.arguments?.getString("name") ?: "Trip summary") }
-        composable("geofence") { GeofenceScreen() }
         composable("settings") { SettingsScreen() }
         composable("driver/{id}") { DriverScreen(it.arguments?.getString("id")) }
         composable("findmycar/{id}") { FindMyCarScreen(it.arguments?.getString("id")) }
@@ -75,6 +74,8 @@ private fun AppNav(nav: NavHostController, state: AppState) {
         composable("commandlog") { CommandLogScreen() }
         composable("help") { HelpScreen() }
         composable("platform") { PlatformScreen() }
+        composable("directions/{id}") { DirectionsScreen(it.arguments?.getString("id")) }
+        composable("geofence?unit={unit}", arguments = listOf(androidx.navigation.navArgument("unit") { nullable = true; defaultValue = null })) { GeofenceScreen(it.arguments?.getString("unit")) }
     }
 }
 

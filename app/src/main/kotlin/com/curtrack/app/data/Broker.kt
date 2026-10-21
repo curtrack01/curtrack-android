@@ -18,6 +18,8 @@ class BrokerException(val status: Int, message: String) : Exception(message)
 
 data class LoginResult(val token: String, val expiresAt: Long, val userId: String, val firstName: String, val portalId: String, val units: List<UnitConfig>, val driverIds: List<String>, val platformUrl: String?)
 data class UnitConfig(val esn: String, val name: String, val plate: String, val group: String, val driverId: String?, val hasDashcam: Boolean)
+data class RouteStep(val instruction: String, val distanceM: Int, val durationS: Int, val point: GeoPoint?)
+data class RouteResult(val distanceM: Int, val durationS: Int, val points: List<GeoPoint>, val steps: List<RouteStep>, val attribution: String)
 data class TrailPoint(val point: GeoPoint, val speed: Int, val heading: Int, val at: Long, val event: String, val address: String)
 
 object Broker {
@@ -66,6 +68,12 @@ object Broker {
         return JSONObject(call(q, token)).optJSONArray("trips")?.map {
             Trip(it.getString("id"), "${clock(it.optString("startAt"))} → ${clock(it.optString("endAt"))}", it.optString("fromAddress"), it.optString("toAddress"), it.optDouble("km", 0.0), 0, "${it.optInt("durationMinutes")} m", 0)
         } ?: emptyList()
+    }
+
+    suspend fun route(token: String, from: GeoPoint, to: GeoPoint, walking: Boolean): RouteResult {
+        val j = JSONObject(call("/route?from=${from.latitude},${from.longitude}&to=${to.latitude},${to.longitude}&mode=${if (walking) "walking" else "driving"}", token))
+        return RouteResult(j.getInt("distanceM"), j.getInt("durationS"), j.getJSONArray("points").map { GeoPoint(it.getDouble("lat"), it.getDouble("lng")) },
+            j.getJSONArray("steps").map { RouteStep(it.optString("instruction"), it.optInt("distanceM"), it.optInt("durationS"), if (it.isNull("lat")) null else GeoPoint(it.getDouble("lat"), it.getDouble("lng"))) }, j.optString("attribution"))
     }
 
     private fun JSONObject.toUnit(): Unit = Unit(

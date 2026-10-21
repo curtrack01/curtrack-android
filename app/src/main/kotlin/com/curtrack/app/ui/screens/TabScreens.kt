@@ -33,6 +33,7 @@ import com.curtrack.app.data.AlertKind
 import com.curtrack.app.data.MockData
 import com.curtrack.app.ui.components.*
 import com.curtrack.app.ui.theme.C
+import org.osmdroid.util.GeoPoint
 
 /* ───────────────────────── Alerts (§2.6) ───────────────────────── */
 
@@ -132,39 +133,55 @@ fun ReportScreen(name: String) {
 /* ───────────────────────── Geofence builder (§2.8) ───────────────────────── */
 
 @Composable
-fun GeofenceScreen() {
+fun GeofenceScreen(unitId: String? = null) {
     val state = LocalAppState.current
     val nav = LocalNav.current
     val toast = toast()
-    var name by remember { mutableStateOf("North depot") }
-    var radius by remember { mutableFloatStateOf(520f) }
-    var center by remember { mutableStateOf(MockData.northDepot) }
+    val live = state.isLive
+    val anchor = state.units.firstOrNull { it.id == unitId && (it.lat != 0.0 || it.lng != 0.0) } ?: state.units.firstOrNull { it.lat != 0.0 || it.lng != 0.0 }
+    var name by remember { mutableStateOf(if (live) "" else "North depot") }
+    var radius by remember { mutableFloatStateOf(if (live) 300f else 520f) }
+    var center by remember { mutableStateOf(anchor?.let { GeoPoint(it.lat, it.lng) } ?: MockData.northDepot) }
     var circle by remember { mutableStateOf(true) }
     var entry by remember { mutableStateOf(true) }; var exit by remember { mutableStateOf(true) }; var outside by remember { mutableStateOf(false) }
     var applies by remember { mutableStateOf(state.units.map { it.id }.toSet()) }
     val valid = name.isNotBlank() && (entry || exit || outside) && applies.isNotEmpty()
 
-    Screen(kicker = "Tap the map to place", title = "New geofence", onBack = { nav.popBackStack() }, scroll = true,
+    Screen(kicker = if (anchor != null) "Centred on ${anchor.name} · tap the map to move" else "Tap the map to place", title = "New geofence", onBack = { nav.popBackStack() }, scroll = true,
         bodyPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 40.dp),
-        trailing = { IconButton(Icons.check, "Save geofence", fill = if (valid) C.amber else C.card, tint = if (valid) C.onAccent else C.dim) { if (valid) { toast("Geofence “$name” saved"); nav.popBackStack() } } }) {
-        Box(Modifier.fillMaxWidth().height(300.dp)) { CurMap(center = center, zoom = 13.0, geofence = center to radius.toDouble(), geofenceColor = C.amber, onMapClick = { center = it; toast("Centre moved") }) }
+        trailing = { IconButton(Icons.check, "Save geofence", fill = if (valid) C.amber else C.card, tint = if (valid) C.onAccent else C.dim) {
+            if (!valid) return@IconButton
+            if (live) {
+                state.addGeofence(com.curtrack.app.data.LocalGeofence("gf-${System.currentTimeMillis()}", name.trim(), center.latitude, center.longitude, radius.toInt(), entry, exit, applies.toList()))
+                toast("Geofence “${name.trim()}” saved — you'll be alerted on ${listOfNotNull(if (entry) "entry" else null, if (exit) "exit" else null).joinToString(" and ")}")
+            } else toast("Geofence “$name” saved")
+            nav.popBackStack()
+        } }) {
+        Box(Modifier.fillMaxWidth().height(300.dp)) {
+            CurMap(units = listOfNotNull(anchor), center = center, zoom = 15.0, fitUnits = false, geofence = center to radius.toDouble(), geofenceColor = C.amber, onMapClick = { center = it; toast("Centre moved") })
+        }
         Column(Modifier.padding(horizontal = 18.dp).padding(top = 14.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            if (anchor != null) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                SecondaryButton("Centre on ${anchor.name}", compact = true) { center = GeoPoint(anchor.lat, anchor.lng) }
+            }
             Card {
-                Field(name, { name = it }, "Geofence name", leading = { Icon(Icons.target, null, Modifier.size(18.dp), tint = C.dim) })
+                Field(name, { name = it }, "Geofence name (e.g. Home, Office)", leading = { Icon(Icons.target, null, Modifier.size(18.dp), tint = C.dim) })
                 Column {
                     Between { Kicker("Radius"); Mono("${radius.toInt()} m", 11, color = C.ink) }
                     Slider(radius, { radius = it }, valueRange = 100f..2000f, colors = SliderDefaults.colors(thumbColor = C.amber, activeTrackColor = C.amber, inactiveTrackColor = C.faint))
                 }
-                TwoUp { SecondaryButton("Circle", selected = circle) { circle = true }; SecondaryButton("Polygon", selected = !circle) { circle = false; toast("Polygon: tap to add vertices (prototype)") } }
+                TwoUp { SecondaryButton("Circle", selected = circle) { circle = true }; SecondaryButton("Polygon", selected = !circle) { circle = false; toast("Polygon fences are coming — using a circle for now") } }
             }
             Card {
                 Kicker("Notify me on")
-                SwitchRow("Entry", entry) { entry = it }; SwitchRow("Exit", exit) { exit = it }; SwitchRow("Only outside work hours", outside) { outside = it }
+                SwitchRow("Entry", entry) { entry = it }; SwitchRow("Exit", exit) { exit = it }
+                if (!live) SwitchRow("Only outside work hours", outside) { outside = it }
             }
             Card {
                 Kicker("Applies to")
                 Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) { state.units.forEach { u -> Chip(u.name, u.id in applies) { applies = if (u.id in applies) applies - u.id else applies + u.id } } }
             }
+            if (live) Card(fill = C.card2, gap = 6.dp) { Kicker("How it works"); Sub("This fence is checked by the app against each position update while the app is open. The platform's own geofences (with push from the platform) are managed on the platform page.") }
             if (!valid) Sub("Name, at least one trigger and one unit are required before saving.")
         }
     }

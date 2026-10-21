@@ -21,6 +21,9 @@ data class ReportType(val name: String, val description: String)
 
 data class Geofence(val id: String, val name: String, val circle: Boolean, val detail: String, val triggers: String, val units: Int, val lastEvent: String, val paused: Boolean = false)
 
+/** App-side geofence (the platform API has no geofence endpoints): stored on the phone, evaluated on every position refresh. */
+data class LocalGeofence(val id: String, val name: String, val lat: Double, val lng: Double, val radiusM: Int, val onEntry: Boolean, val onExit: Boolean, val unitIds: List<String>, val inside: Map<String, Boolean> = emptyMap())
+
 data class Landmark(val id: String, val name: String, val street: String, val radius: Int, val inside: Int, val note: String?, val kind: String)
 
 enum class CommandState { QUEUED, SENT, ACKNOWLEDGED, FAILED }

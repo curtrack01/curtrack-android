@@ -4,12 +4,15 @@ import android.content.Context
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import org.json.JSONArray
+import org.json.JSONObject
 
 /**
  * App preferences + session (README §5.1/§5.2), persisted in SharedPreferences.
  * The session token is mock-only here; the real one goes in EncryptedSharedPreferences once the broker exists.
  */
 class AppState(context: Context) {
+    private val app = context.applicationContext
     private val prefs = context.getSharedPreferences("curtrack", Context.MODE_PRIVATE)
 
     var theme by mutableStateOf(prefs.getString("theme", "dark") ?: "dark")          // dark | light | system
@@ -40,10 +43,63 @@ class AppState(context: Context) {
     }
     suspend fun refreshLive(): Boolean {
         val t = liveToken ?: return false
-        return try { liveUnits = Broker.units(t); liveUpdatedAt = System.currentTimeMillis(); liveError = null; true }
+        return try { liveUnits = Broker.units(t); liveUpdatedAt = System.currentTimeMillis(); liveError = null; evaluateGeofences(liveUnits); true }
         catch (e: BrokerException) { if (e.status == 401) { liveToken = null; save() }; liveError = e.message; false }
         catch (e: Exception) { liveError = "No connection — showing last known positions"; false }
     }
+    /* ── App-side geofences ── */
+    var geofences by mutableStateOf(loadGeofences())
+        private set
+    private fun loadGeofences(): List<LocalGeofence> = runCatching {
+        val a = JSONArray(prefs.getString("geofences", "[]"))
+        (0 until a.length()).map { i -> val o = a.getJSONObject(i)
+            LocalGeofence(o.getString("id"), o.getString("name"), o.getDouble("lat"), o.getDouble("lng"), o.getInt("radiusM"), o.optBoolean("onEntry", true), o.optBoolean("onExit", true),
+                o.optJSONArray("unitIds")?.let { u -> (0 until u.length()).map { u.getString(it) } } ?: emptyList(),
+                o.optJSONObject("inside")?.let { m -> m.keys().asSequence().associateWith { k -> m.getBoolean(k) } } ?: emptyMap()) }
+    }.getOrDefault(emptyList())
+    private fun saveGeofences(list: List<LocalGeofence>) {
+        geofences = list
+        prefs.edit().putString("geofences", JSONArray(list.map { g -> JSONObject().put("id", g.id).put("name", g.name).put("lat", g.lat).put("lng", g.lng).put("radiusM", g.radiusM).put("onEntry", g.onEntry).put("onExit", g.onExit).put("unitIds", JSONArray(g.unitIds)).put("inside", JSONObject(g.inside)) }).toString()).apply()
+    }
+    fun addGeofence(g: LocalGeofence) = saveGeofences(geofences.filter { it.id != g.id } + g)
+    fun removeGeofence(id: String) = saveGeofences(geofences.filter { it.id != id })
+
+    /** Compare every unit against every fence; on a transition, raise an in-app alert and a phone notification. */
+    private fun evaluateGeofences(units: List<Unit>) {
+        if (geofences.isEmpty()) return
+        val now = System.currentTimeMillis()
+        val fresh = mutableListOf<Alert>()
+        val updated = geofences.map { g ->
+            var inside = g.inside
+            units.filter { u -> (g.unitIds.isEmpty() || u.id in g.unitIds) && (u.lat != 0.0 || u.lng != 0.0) }.forEach { u ->
+                val d = org.osmdroid.util.GeoPoint(u.lat, u.lng).distanceToAsDouble(org.osmdroid.util.GeoPoint(g.lat, g.lng))
+                val isIn = d <= g.radiusM
+                val was = inside[u.id]
+                if (was != null && was != isIn) {
+                    val title = if (isIn) "Geofence entry" else "Geofence exit"
+                    if ((isIn && g.onEntry) || (!isIn && g.onExit)) {
+                        fresh += Alert("gf-${g.id}-${u.id}-$now", title, u.name, "just now", "${if (isIn) "Entered" else "Left"} “${g.name}” · ${u.address}", AlertKind.GEOFENCE, true)
+                        notify(title, "${u.name} ${if (isIn) "entered" else "left"} ${g.name}")
+                    }
+                }
+                inside = inside + (u.id to isIn)
+            }
+            g.copy(inside = inside)
+        }
+        if (updated != geofences) saveGeofences(updated)
+        if (fresh.isNotEmpty()) liveAlerts = fresh + liveAlerts
+    }
+
+    private fun notify(title: String, text: String) {
+        if (pushToggles["geofence"] == false) return
+        val nm = app.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+        if (android.os.Build.VERSION.SDK_INT >= 26) nm.createNotificationChannel(android.app.NotificationChannel("alerts", "CurTrack alerts", android.app.NotificationManager.IMPORTANCE_HIGH))
+        val intent = android.app.PendingIntent.getActivity(app, 0, app.packageManager.getLaunchIntentForPackage(app.packageName), android.app.PendingIntent.FLAG_IMMUTABLE)
+        val n = (if (android.os.Build.VERSION.SDK_INT >= 26) android.app.Notification.Builder(app, "alerts") else @Suppress("DEPRECATION") android.app.Notification.Builder(app))
+            .setSmallIcon(com.curtrack.app.R.drawable.ic_launcher_foreground).setContentTitle(title).setContentText(text).setAutoCancel(true).setContentIntent(intent).build()
+        runCatching { nm.notify((System.currentTimeMillis() % Int.MAX_VALUE).toInt(), n) }
+    }
+
     suspend fun refreshAlerts() { val t = liveToken ?: return; runCatching { liveAlerts = Broker.alerts(t, System.currentTimeMillis() - 7L * 86400000) } }
 
     var pushToggles by mutableStateOf(

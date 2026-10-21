@@ -304,11 +304,23 @@ fun LandmarksScreen() {
 fun GeofencesScreen() {
     val nav = LocalNav.current
     var filter by remember { mutableStateOf("All") }
-    val list = MockData.geofences.filter { filter == "All" || (filter == "Active" && !it.paused) || (filter == "Paused" && it.paused) }
-    Screen(kicker = "${MockData.geofences.count { !it.paused }} active · ${MockData.geofences.count { it.paused }} paused", title = "Geofences", onBack = { nav.popBackStack() }, trailing = { IconButton(Icons.plus, "New geofence") { nav.navigate("geofence") } }) {
-        ChipRow(listOf("All", "Active", "Paused", "Household", "North route"), filter) { filter = it }
-        list.forEach { g ->
-            Card(gap = 10.dp, onClick = { nav.navigate("geofence") }, modifier = Modifier.alpha(if (g.paused) 0.7f else 1f)) {
+    val state = LocalAppState.current
+    val toast = toast()
+    val live = state.isLive
+    val list = if (live) state.geofences.map { g -> com.curtrack.app.data.Geofence(g.id, g.name, true, "Circle · ${g.radiusM} m", listOfNotNull(if (g.onEntry) "Entry" else null, if (g.onExit) "Exit" else null).joinToString(" & ").ifBlank { "No triggers" }, g.unitIds.size.coerceAtLeast(1), g.inside.entries.firstOrNull { it.value }?.let { "${state.unit(it.key).name} inside" } ?: "nobody inside") }
+               else MockData.geofences.filter { filter == "All" || (filter == "Active" && !it.paused) || (filter == "Paused" && it.paused) }
+    Screen(kicker = if (live) "${list.size} on this phone" else "${MockData.geofences.count { !it.paused }} active · ${MockData.geofences.count { it.paused }} paused", title = "Geofences", onBack = { nav.popBackStack() }, trailing = { IconButton(Icons.plus, "New geofence") { nav.navigate("geofence?unit=${state.units.firstOrNull()?.id ?: ""}") } }) {
+        if (!live) ChipRow(listOf("All", "Active", "Paused", "Household", "North route"), filter) { filter = it }
+        if (live && list.isEmpty()) Card(fill = C.card2, gap = 8.dp) { Kicker("No geofences yet"); Sub("Tap + to draw one around your vehicle, home or office. The app alerts you when the vehicle enters or leaves."); PrimaryButton("New geofence", icon = Icons.plus) { nav.navigate("geofence?unit=${state.units.firstOrNull()?.id ?: ""}") } }
+        if (live) list.forEach { g ->
+            Card(gap = 10.dp) {
+                Between { Title(g.name); Pill("Active", text = C.teal, border = C.teal, upper = false) }
+                Sub("${g.detail} · ${g.triggers}"); Mono("${g.units} unit${if (g.units == 1) "" else "s"} · ${g.lastEvent}")
+                TwoUp { SecondaryButton("Delete", compact = true, text = C.red) { state.removeGeofence(g.id); toast("Geofence removed") } }
+            }
+        }
+        if (!live) list.forEach { g ->
+            Card(gap = 10.dp, onClick = { nav.navigate("geofence?unit=") }, modifier = Modifier.alpha(if (g.paused) 0.7f else 1f)) {
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Top) {
                     Box(Modifier.size(72.dp).clip(RoundedCornerShape(Radius.field)).background(C.card2).border(1.dp, C.line, RoundedCornerShape(Radius.field)), contentAlignment = Alignment.Center) {
                         val shape = if (g.circle) CircleShape else RoundedCornerShape(6.dp)

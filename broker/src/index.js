@@ -240,7 +240,37 @@ async function handle(req, env, ctx) {
     if (!(user.driverIds || []).map(String).includes(String(id))) return err(403, "Driver not on this account");
     return json(await itrack(env, "/driverapi", { driverId: id }, 30000));
   }
+  if (path === "/route") {
+    // In-app directions: OSRM (public demo server, OpenStreetMap data). from/to = "lat,lng"; mode = driving | walking
+    const [flat, flng] = String(q.from || "").split(",").map(Number); const [tlat, tlng] = String(q.to || "").split(",").map(Number);
+    if (![flat, flng, tlat, tlng].every(Number.isFinite)) return err(400, "from and to must be lat,lng");
+    const profile = q.mode === "walking" ? "foot" : "driving";
+    const u = `${env.OSRM_BASE || "https://router.project-osrm.org"}/route/v1/${profile}/${flng},${flat};${tlng},${tlat}?overview=full&geometries=geojson&steps=true`;
+    const r = await fetch(u, { headers: { "user-agent": "curtrack-broker" } });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || j.code !== "Ok" || !j.routes?.length) return err(502, `Routing unavailable (${j.code || r.status})`);
+    const route = j.routes[0];
+    return json({
+      distanceM: Math.round(route.distance), durationS: Math.round(route.duration),
+      points: route.geometry.coordinates.map(([lng, lat]) => ({ lat, lng })),
+      steps: (route.legs?.[0]?.steps || []).map((st) => ({ instruction: describeStep(st), distanceM: Math.round(st.distance), durationS: Math.round(st.duration), lat: st.maneuver?.location?.[1], lng: st.maneuver?.location?.[0] })).filter((st) => st.distanceM > 0 || /arrive/i.test(st.instruction)),
+      attribution: "Routing © OSRM · map data © OpenStreetMap contributors",
+    });
+  }
   return err(404, "No such endpoint");
+}
+
+function describeStep(st) {
+  const m = st.maneuver || {}; const name = st.name ? ` onto ${st.name}` : "";
+  const mod = (m.modifier || "").replace("slight ", "slightly ").replace("sharp ", "sharply ");
+  switch (m.type) {
+    case "depart": return `Head ${mod || "out"}${name}`;
+    case "arrive": return `Arrive at your vehicle${mod ? ` (on the ${mod})` : ""}`;
+    case "turn": case "end of road": case "fork": case "merge": case "on ramp": case "off ramp": return `Turn ${mod || ""}${name}`.replace(/\s+/g, " ");
+    case "continue": case "new name": return `Continue${name}`;
+    case "roundabout": case "rotary": return `At the roundabout take exit ${m.exit || ""}${name}`;
+    default: return `${m.type ? m.type[0].toUpperCase() + m.type.slice(1) : "Continue"}${name}`;
+  }
 }
 
 const cors = () => ({ "access-control-allow-origin": "*", "access-control-allow-headers": "authorization, content-type", "access-control-allow-methods": "GET, POST, OPTIONS" });
