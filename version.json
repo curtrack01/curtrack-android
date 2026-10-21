@@ -1,8 +1,8 @@
 {
-  "versionCode": 102,
-  "versionName": "1.2.0",
-  "url": "https://github.com/curtrack01/curtrack-android/releases/download/v1.2.0-102/curtrack-1.2.0.apk",
-  "sha256": "c679bc160c7183a944f93090a2ceb8b1d63d4f9b275f819bfc818fb6d9199ee3",
-  "notes": "Live data: sign in with your CurTrack account to see your real vehicles, trail and events.",
+  "versionCode": 103,
+  "versionName": "1.3.0",
+  "url": "https://github.com/curtrack01/curtrack-android/releases/download/v1.3.0-103/curtrack-1.3.0.apk",
+  "sha256": "9a4e5c4a089a470b3b34a4a4bac4bc6eb6fba40e264d0b58f29c6e9ad4d79683",
+  "notes": "Clearer maps, in-app directions to your vehicle, and geofences with entry/exit alerts.",
   "mandatory": false
 }
