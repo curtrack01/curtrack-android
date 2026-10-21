@@ -19,10 +19,11 @@ android {
         applicationId = "com.curtrack.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 101
-        versionName = "1.1.0"
+        versionCode = 102
+        versionName = "1.2.0"
         // Where the in-app updater looks for new builds (README §0.1). Change before shipping.
-        buildConfigField("String", "UPDATE_URL", "\"https://curtrack.com/app/version.json\"")
+        buildConfigField("String", "UPDATE_URL", "\"https://curtrack-broker.curtrack01.workers.dev/app/version.json\"")
+        buildConfigField("String", "BROKER_URL", "\"https://curtrack-broker.curtrack01.workers.dev\"")
         buildConfigField("String", "SUPPORT_PHONE", "\"+599 9 518 7297\"")
         buildConfigField("String", "SUPPORT_EMAIL", "\"gps@curtrack.com\"")
     }

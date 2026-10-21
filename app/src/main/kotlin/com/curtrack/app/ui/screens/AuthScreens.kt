@@ -39,26 +39,38 @@ import com.curtrack.app.BuildConfig
 import com.curtrack.app.LocalAppState
 import com.curtrack.app.LocalNav
 import com.curtrack.app.toast
+import com.curtrack.app.data.Broker
+import com.curtrack.app.data.BrokerException
+import com.curtrack.app.data.Session
 import com.curtrack.app.ui.components.*
 import com.curtrack.app.ui.theme.C
 import com.curtrack.app.ui.theme.SansFamily
 import com.curtrack.app.ui.theme.Space
 import kotlinx.coroutines.delay
 
-private const val MOCK_PASSWORD = "dashcam"   // mock auth until the broker exists (README §6)
 
 @Composable
 fun LoginScreen() {
     val state = LocalAppState.current
     val nav = LocalNav.current
-    var user by remember { mutableStateOf(state.session.userId) }
+    var user by remember { mutableStateOf(if (state.session.userId == "sarah.k") "" else state.session.userId) }
     var pass by remember { mutableStateOf("") }
     var portal by remember { mutableStateOf(state.session.portalId) }
-    var failures by remember { mutableIntStateOf(0) }
-    var validating by remember { mutableStateOf(false) }
-    var lockSeconds by remember { mutableIntStateOf(0) }
-    val locked = lockSeconds > 0
-    LaunchedEffect(locked) { while (lockSeconds > 0) { delay(1000); lockSeconds-- } }
+    var error by remember { mutableStateOf<String?>(null) }
+    var busy by remember { mutableStateOf(false) }
+    var attempt by remember { mutableIntStateOf(0) }
+    var demoOpen by remember { mutableStateOf(false) }
+
+    LaunchedEffect(attempt) {
+        if (attempt == 0) return@LaunchedEffect
+        busy = true; error = null
+        try {
+            val r = Broker.login(user.trim(), pass, portal.trim().ifBlank { "189" })
+            state.startLive(r)
+            nav.navigate(if (state.onboardingDone) "home" else "permissions") { popUpTo("login") { inclusive = true } }
+        } catch (e: BrokerException) { error = e.message } catch (e: Exception) { error = "Can't reach CurTrack — check your connection." }
+        busy = false
+    }
 
     Screen(bodyPadding = PaddingValues(horizontal = Space.s9, vertical = 40.dp)) {
         Spacer(Modifier.weight(1f))
@@ -68,50 +80,29 @@ fun LoginScreen() {
             Text("See every vehicle,\nright now.", color = C.ink, fontFamily = SansFamily, fontSize = 32.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.02).em, lineHeight = 35.sp)
         }
         Gap(8.dp)
-        Card(gap = 12.dp, border = C.teal.copy(alpha = 0.45f)) {
-            Between { Kicker("Live vehicles", C.teal); Pill("Portal 189", upper = false) }
-            Sub("Sign in with the User ID and password your dealer gave you. This opens the CurTrack platform inside the app.")
-            PrimaryButton("Sign in to live platform", icon = Icons.arrowRight) { nav.navigate("platform") }
-        }
         Card(gap = 14.dp) {
-            Kicker("Demo · sample data")
             Field(user, { user = it }, "User ID", leading = { Icon(Icons.car, null, Modifier.size(20.dp), tint = C.dim) })
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Field(pass, { pass = it }, "Password", leading = { Mono("••", 11) }, password = true, error = failures > 0)
-                if (failures > 0 && !locked) Sub("Incorrect password. ${5 - failures} attempts left.", color = C.red)
+                Field(pass, { pass = it }, "Password", leading = { Mono("••", 11) }, password = true, error = error != null)
+                if (error != null) Sub(error!!, color = C.red)
             }
             Field(portal, { portal = it }, "Portal ID", leading = { Mono("PID", 11) })
-            if (locked) Card(fill = C.card2, border = C.red.copy(alpha = 0.45f), gap = 8.dp, padding = 14.dp) {
-                Between { Kicker("Account locked", C.red); Mono("%d:%02d".format(lockSeconds / 60, lockSeconds % 60)) }
-                Sub("Too many failed attempts. Try again in 15 minutes, or call your dealer to unlock now.")
-                val ctx = LocalContext.current
-                SecondaryButton("Call support · ${BuildConfig.SUPPORT_PHONE}", compact = true) { ctx.startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:${BuildConfig.SUPPORT_PHONE.replace(" ", "")}"))) }
-            }
             SwitchRow("Keep me signed in", state.keepSignedIn) { state.keepSignedIn = it; state.save() }
-            SecondaryButton(if (validating) "Opening…" else "Enter demo", enabled = !locked && !validating) {
-                validating = true
-            }
-            LaunchedEffect(validating) {
-                if (validating) {
-                    delay(600)
-                    if (pass == MOCK_PASSWORD && user.isNotBlank()) {
-                        state.session = state.session.copy(userId = user, portalId = portal.ifBlank { "189" })
-                        state.signedIn = true; state.save()
-                        nav.navigate(if (state.onboardingDone) "home" else "permissions") { popUpTo("login") { inclusive = true } }
-                    } else {
-                        failures++
-                        if (failures >= 5) { lockSeconds = 15 * 60; failures = 0 }
-                    }
-                    validating = false
-                }
-            }
+            PrimaryButton(if (busy) "Signing in…" else "Log in", enabled = !busy && user.isNotBlank() && pass.isNotBlank()) { attempt++ }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterHorizontally)) {
                 Sub("Forgot ID", Modifier.clickableText { nav.navigate("forgot") })
                 Sub("Forgot password", Modifier.clickableText { nav.navigate("forgot") })
             }
         }
+        Card(fill = C.card2, gap = 10.dp) {
+            Between { Kicker("Platform web page"); Pill("Portal 189", upper = false) }
+            Sub("Commands, geofences and reports are on the CurTrack platform until the app covers them.")
+            SecondaryButton("Open platform page", icon = Icons.arrowRight) { nav.navigate("platform") }
+        }
         Sub("Portal ID ${portal.ifBlank { "189" }} · CurTrack dash cams & GPS", Modifier.fillMaxWidth(), align = TextAlign.Center)
-        Sub("Demo password is “dashcam”. The designed screens switch to live data once the platform API is connected.", Modifier.fillMaxWidth().alpha(0.6f), align = TextAlign.Center)
+        Sub(if (demoOpen) "Demo: user demo · password dashcam" else "Try the demo with sample data", Modifier.fillMaxWidth().alpha(0.6f).clickableText {
+            if (demoOpen) { state.liveToken = null; state.session = Session("demo", "189", "Sarah"); state.signedIn = true; state.save(); nav.navigate(if (state.onboardingDone) "home" else "permissions") { popUpTo("login") { inclusive = true } } } else demoOpen = true
+        }, align = TextAlign.Center)
         Spacer(Modifier.weight(1f))
     }
 }

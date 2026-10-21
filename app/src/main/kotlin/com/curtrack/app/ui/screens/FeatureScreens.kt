@@ -57,7 +57,7 @@ fun DriverScreen(id: String?) {
     val state = LocalAppState.current
     val nav = LocalNav.current
     val toast = toast()
-    val u = MockData.unit(id)
+    val u = LocalAppState.current.unit(id)
     Screen(kicker = "Driver · ${u.group}", title = u.driver, onBack = { nav.popBackStack() }, tab = Tab.LIVE, onTab = { nav.goTab(it) }, trailing = { IconButton(Icons.edit, "Edit driver") { toast("Edit driver") } }) {
         Card(gap = 14.dp) {
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -98,7 +98,7 @@ fun FindMyCarScreen(id: String?) {
     val nav = LocalNav.current
     val toast = toast()
     val ctx = LocalContext.current
-    val u = MockData.unit(id)
+    val u = LocalAppState.current.unit(id)
     val me = GeoPoint(u.lat - 0.0011, u.lng - 0.0006)
     Box(Modifier.fillMaxSize().background(C.bg)) {
         CurMap(units = listOf(u), center = GeoPoint(u.lat - 0.0005, u.lng - 0.0003), zoom = 17.0, fitUnits = false, trail = listOf(me, GeoPoint(me.latitude, u.lng), GeoPoint(u.lat, u.lng)))
@@ -157,7 +157,7 @@ fun ShareScreen() {
             Sub("Expires today at 10:41 · viewed 0 times")
         }
         TwoUp {
-            PrimaryButton("Share link", Icons.share) { ctx.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, "Track my ${MockData.unit(unit).name} live for $ttl: https://$url") }, "Share live location")) }
+            PrimaryButton("Share link", Icons.share) { ctx.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, "Track my ${state.unit(unit).name} live for $ttl: https://$url") }, "Share live location")) }
             SecondaryButton("Revoke", text = C.red) { toast("Link revoked") }
         }
         Card(gap = 0.dp) {
@@ -176,7 +176,7 @@ fun ShareScreen() {
 fun ClipsScreen(id: String?) {
     val nav = LocalNav.current
     val toast = toast()
-    val u = MockData.unit(id)
+    val u = LocalAppState.current.unit(id)
     var filter by remember { mutableStateOf("All") }
     val clips = MockData.clips.filter { filter == "All" || it.kind.equals(filter.replace("Harsh ", ""), true) }
     Screen(kicker = "${u.name} · Dash cam", title = "Saved clips", onBack = { nav.popBackStack() }, trailing = { IconButton(Icons.calendar, "Filter by date") { toast("Date filter") } }) {
@@ -217,7 +217,7 @@ fun ClipsScreen(id: String?) {
 fun WatchLiveScreen(id: String?) {
     val nav = LocalNav.current
     val toast = toast()
-    val u = MockData.unit(id)
+    val u = LocalAppState.current.unit(id)
     var cam by remember { mutableIntStateOf(0) }
     var audio by remember { mutableStateOf(false) }; var quality by remember { mutableIntStateOf(1) }
     var left by remember { mutableIntStateOf(5 * 60) }

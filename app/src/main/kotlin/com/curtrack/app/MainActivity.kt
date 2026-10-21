@@ -47,7 +47,7 @@ fun toast(): (String) -> kotlin.Unit {
 @Composable
 private fun AppNav(nav: NavHostController, state: AppState) {
     val start = when {
-        !state.signedIn -> "login"
+        !state.signedIn && !state.isLive -> "login"
         !state.onboardingDone -> "permissions"
         else -> "home"
     }

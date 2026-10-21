@@ -13,6 +13,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -44,19 +45,23 @@ fun alertColor(k: AlertKind) = when (k) {
 @Composable
 fun AlertsScreen() {
     val nav = LocalNav.current
+    val state = LocalAppState.current
     val toast = toast()
     var filter by remember { mutableStateOf("All") }
     var handled by remember { mutableStateOf(setOf<String>()) }
-    val list = MockData.alerts.filter { a ->
+    var loading by remember { mutableStateOf(false) }
+    LaunchedEffect(state.isLive) { if (state.isLive) { loading = true; state.refreshAlerts(); loading = false } }
+    val list = state.alerts.filter { a ->
         when (filter) {
             "All" -> true; "Unread" -> a.highPriority && a.id !in handled
             "Geofence" -> a.kind == AlertKind.GEOFENCE; "Speed" -> a.kind == AlertKind.SPEED
             "Dash cam" -> a.kind == AlertKind.IMPACT; "Maintenance" -> a.kind == AlertKind.MAINTENANCE; else -> true
         }
     }
-    Screen(kicker = "Push notifications", title = "Alerts", tab = Tab.ALERTS, onTab = { nav.goTab(it) }, trailing = { IconButton(Icons.check, "Clear all") { handled = MockData.alerts.map { it.id }.toSet(); toast("All alerts cleared") } }) {
+    Screen(kicker = "Push notifications", title = "Alerts", tab = Tab.ALERTS, onTab = { nav.goTab(it) }, trailing = { IconButton(Icons.check, "Clear all") { handled = state.alerts.map { it.id }.toSet(); toast("All alerts cleared") } }) {
         ChipRow(listOf("All", "Unread", "Geofence", "Speed", "Dash cam", "Maintenance"), filter) { filter = it }
-        if (list.isEmpty()) Sub("No alerts in the last 7 days", Modifier.fillMaxWidth().padding(vertical = 40.dp), align = TextAlign.Center)
+        if (loading) Sub("Loading events from the platform…", Modifier.fillMaxWidth().padding(vertical = 12.dp), align = TextAlign.Center)
+        else if (list.isEmpty()) Sub("No alerts in the last 7 days", Modifier.fillMaxWidth().padding(vertical = 40.dp), align = TextAlign.Center)
         list.forEach { a -> AlertCard(a, a.id in handled, onHandled = { handled = handled + a.id }, onMap = { nav.goTab(Tab.LIVE) }) }
     }
 }
@@ -197,6 +202,6 @@ fun SettingsScreen() {
                 }) { Title(label) }
             }
         }
-        Sub("CurTrack app · ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})", Modifier.fillMaxWidth(), align = TextAlign.Center)
+        Sub("CurTrack app · ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}) · ${if (state.isLive) "live" else "demo"}", Modifier.fillMaxWidth(), align = TextAlign.Center)
     }
 }
