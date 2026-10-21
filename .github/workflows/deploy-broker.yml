@@ -1,0 +1,54 @@
+name: Deploy CurTrack broker
+
+on:
+  push:
+    branches: [main]
+    paths: ["broker/**", ".github/workflows/deploy-broker.yml"]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check secrets are present
+        env:
+          CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          K1: ${{ secrets.ITRACK_API_KEY }}
+          K2: ${{ secrets.SESSION_SECRET }}
+          K3: ${{ secrets.USERS_JSON }}
+        run: |
+          for v in CF_TOKEN CF_ACCOUNT K1 K2 K3; do [ -n "${!v}" ] || { echo "::error::Missing GitHub secret for $v (CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID, ITRACK_API_KEY, SESSION_SECRET, USERS_JSON)"; exit 1; }; done
+          echo "lengths: token ${#CF_TOKEN} account ${#CF_ACCOUNT} apikey ${#K1} session ${#K2} users ${#K3}"
+
+      - name: Deploy worker and push secrets
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: broker
+          command: deploy
+          secrets: |
+            ITRACK_API_KEY
+            SESSION_SECRET
+            USERS_JSON
+        env:
+          ITRACK_API_KEY: ${{ secrets.ITRACK_API_KEY }}
+          SESSION_SECRET: ${{ secrets.SESSION_SECRET }}
+          USERS_JSON: ${{ secrets.USERS_JSON }}
+
+      - name: Smoke test (live platform)
+        env:
+          BROKER_URL: ${{ vars.BROKER_URL }}
+          APP_USER: ${{ secrets.APP_TEST_USER }}
+          APP_PASS: ${{ secrets.APP_TEST_PASSWORD }}
+        run: |
+          [ -n "$BROKER_URL" ] || { echo "Set repository variable BROKER_URL to skip-free smoke tests"; exit 0; }
+          echo "health: $(curl -s $BROKER_URL/health)"
+          [ -n "$APP_USER" ] || exit 0
+          TOKEN=$(curl -s -X POST $BROKER_URL/auth/login -H 'content-type: application/json' -d "{\"userId\":\"$APP_USER\",\"password\":\"$APP_PASS\",\"portalId\":\"189\"}" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("token",""))')
+          [ -n "$TOKEN" ] || { echo "::error::Login failed"; exit 1; }
+          curl -s $BROKER_URL/units -H "authorization: Bearer $TOKEN" | python3 -c 'import json,sys; d=json.load(sys.stdin); [print("unit", u["name"], u["status"], u["speed"], "km/h", u["lastReport"], u.get("error","")) for u in d["units"]]'

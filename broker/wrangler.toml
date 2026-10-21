@@ -1,0 +1,12 @@
+name = "curtrack-broker"
+main = "src/index.js"
+compatibility_date = "2025-01-01"
+workers_dev = true
+
+[vars]
+ITRACK_BASE = "https://v3.securegpstracking.com/html5/api"
+PLATFORM_URL = "https://v3.securegpstracking.com/html5/jsp/common/login.jsp?pid=189"
+APP_VERSION_URL = "https://raw.githubusercontent.com/curtrack01/curtrack-android/main/version.json"
+SESSION_HOURS = "720"
+# Event names polled for the Alerts screen (iTrackGPS /eventapi EventName values). Adjust to the names your units report.
+ALERT_EVENTS = "Ignition On,Ignition Off,Speeding,Over Speed,Harsh Braking,Harsh Acceleration,Impact,Geofence In,Geofence Out,Idle,Low Battery,Power Disconnect,Tow"
