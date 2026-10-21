@@ -1,8 +1,8 @@
 {
   "versionCode": 100,
   "versionName": "1.0.0",
-  "url": "https://curtrack.com/app/curtrack-1.0.0.apk",
-  "sha256": "REPLACE_WITH_SHA256_OF_THE_APK",
-  "notes": "First CurTrack build — all screens on sample data.",
+  "url": "https://github.com/curtrack01/curtrack-android/releases/download/v1.0.0-100/curtrack-1.0.0.apk",
+  "sha256": "32e453fe6fd7307665e4d9c500de2ee491ddc9781ced47a1d6b5d68177458bd6",
+  "notes": "First CurTrack build \u2014 all screens on sample data.",
   "mandatory": false
 }
