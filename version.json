@@ -1,8 +1,8 @@
 {
-  "versionCode": 100,
-  "versionName": "1.0.0",
-  "url": "https://github.com/curtrack01/curtrack-android/releases/download/v1.0.0-100/curtrack-1.0.0.apk",
-  "sha256": "32e453fe6fd7307665e4d9c500de2ee491ddc9781ced47a1d6b5d68177458bd6",
-  "notes": "First CurTrack build \u2014 all screens on sample data.",
+  "versionCode": 101,
+  "versionName": "1.1.0",
+  "url": "https://github.com/curtrack01/curtrack-android/releases/download/v1.1.0-101/curtrack-1.1.0.apk",
+  "sha256": "a341db057af1d8d43c81cd814d2f048956a343c2209ac5651ce2ea6efa17be10",
+  "notes": "Live platform: sign in to the CurTrack portal (189) inside the app for real vehicles.",
   "mandatory": false
 }
