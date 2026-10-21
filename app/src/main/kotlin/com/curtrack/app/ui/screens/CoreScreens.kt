@@ -96,6 +96,12 @@ fun HomeScreen() {
             }
         }
 
+        Card(border = C.teal.copy(alpha = 0.45f), gap = 10.dp, onClick = { nav.navigate("platform") }) {
+            Between { Kicker("Live vehicles", C.teal); Pill("Portal 189", upper = false) }
+            Sub("The screens below show sample data. Open the CurTrack platform for your real units, trips and alerts.")
+            PrimaryButton("Open live platform", icon = Icons.arrowRight) { nav.navigate("platform") }
+        }
+
         Segmented(listOf("My vehicles · ${MockData.personal.size}", "Fleet · 24"), if (state.fleetScope) 1 else 0) { state.fleetScope = it == 1; state.save() }
 
         Card(gap = 14.dp) {

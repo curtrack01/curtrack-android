@@ -23,6 +23,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -178,15 +179,15 @@ fun PrimaryButton(label: String, modifier: Modifier = Modifier, icon: ImageVecto
 }
 
 @Composable
-fun RowScope.SecondaryButton(label: String, icon: ImageVector? = null, text: Color? = null, compact: Boolean = false, selected: Boolean = false, onClick: () -> Unit) =
-    SecondaryButton(label, Modifier.weight(1f), icon, text, compact, selected, onClick)
+fun RowScope.SecondaryButton(label: String, icon: ImageVector? = null, text: Color? = null, compact: Boolean = false, selected: Boolean = false, enabled: Boolean = true, onClick: () -> Unit) =
+    SecondaryButton(label, Modifier.weight(1f), icon, text, compact, selected, enabled, onClick)
 
 @Composable
-fun SecondaryButton(label: String, modifier: Modifier = Modifier, icon: ImageVector? = null, text: Color? = null, compact: Boolean = false, selected: Boolean = false, onClick: () -> Unit) {
+fun SecondaryButton(label: String, modifier: Modifier = Modifier, icon: ImageVector? = null, text: Color? = null, compact: Boolean = false, selected: Boolean = false, enabled: Boolean = true, onClick: () -> Unit) {
     val shape = RoundedCornerShape(Radius.button)
     Row(
         modifier.fillMaxWidth().clip(shape).background(if (selected) C.ink else C.card2).border(1.dp, if (selected) Color.Transparent else C.line, shape)
-            .clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = if (compact) 11.dp else 15.dp),
+            .clickable(enabled = enabled, onClick = onClick).padding(horizontal = 16.dp, vertical = if (compact) 11.dp else 15.dp).then(if (enabled) Modifier else Modifier.alpha(0.5f)),
         horizontalArrangement = Arrangement.spacedBy(9.dp, Alignment.CenterHorizontally), verticalAlignment = Alignment.CenterVertically,
     ) {
         val tint = if (selected) C.bg else text ?: C.ink

@@ -74,6 +74,7 @@ private fun AppNav(nav: NavHostController, state: AppState) {
         composable("geofences") { GeofencesScreen() }
         composable("commandlog") { CommandLogScreen() }
         composable("help") { HelpScreen() }
+        composable("platform") { PlatformScreen() }
     }
 }
 

@@ -190,7 +190,7 @@ fun SettingsScreen() {
             Between { Body("Distance"); Segmented(listOf("km", "mi"), if (state.distanceUnit == "mi") 1 else 0, Modifier.width(120.dp)) { state.distanceUnit = if (it == 1) "mi" else "km"; state.save() } }
         }
         Card(gap = 0.dp) {
-            val rows = listOf("Units & groups" to "units", "Landmarks" to "landmarks", "Geofences" to "geofences", "Proximity" to null, "Drivers ID" to "driver/u1", "Command log" to "commandlog", "Help & support" to "help", "Log out" to "logout")
+            val rows = listOf("Live platform (real vehicles)" to "platform", "Units & groups" to "units", "Landmarks" to "landmarks", "Geofences" to "geofences", "Proximity" to null, "Drivers ID" to "driver/u1", "Command log" to "commandlog", "Help & support" to "help", "Log out" to "logout")
             rows.forEachIndexed { i, (label, route) ->
                 ListRow(last = i == rows.lastIndex, onClick = {
                     when (route) { null -> toast("$label — coming with the platform API"); "logout" -> { state.logout(); nav.navigate("login") { popUpTo(0) } }; else -> nav.navigate(route) }

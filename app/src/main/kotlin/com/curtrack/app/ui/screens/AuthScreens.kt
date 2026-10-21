@@ -68,7 +68,13 @@ fun LoginScreen() {
             Text("See every vehicle,\nright now.", color = C.ink, fontFamily = SansFamily, fontSize = 32.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.02).em, lineHeight = 35.sp)
         }
         Gap(8.dp)
+        Card(gap = 12.dp, border = C.teal.copy(alpha = 0.45f)) {
+            Between { Kicker("Live vehicles", C.teal); Pill("Portal 189", upper = false) }
+            Sub("Sign in with the User ID and password your dealer gave you. This opens the CurTrack platform inside the app.")
+            PrimaryButton("Sign in to live platform", icon = Icons.arrowRight) { nav.navigate("platform") }
+        }
         Card(gap = 14.dp) {
+            Kicker("Demo · sample data")
             Field(user, { user = it }, "User ID", leading = { Icon(Icons.car, null, Modifier.size(20.dp), tint = C.dim) })
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Field(pass, { pass = it }, "Password", leading = { Mono("••", 11) }, password = true, error = failures > 0)
@@ -82,7 +88,7 @@ fun LoginScreen() {
                 SecondaryButton("Call support · ${BuildConfig.SUPPORT_PHONE}", compact = true) { ctx.startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:${BuildConfig.SUPPORT_PHONE.replace(" ", "")}"))) }
             }
             SwitchRow("Keep me signed in", state.keepSignedIn) { state.keepSignedIn = it; state.save() }
-            PrimaryButton(if (validating) "Signing in…" else "Log in", enabled = !locked && !validating) {
+            SecondaryButton(if (validating) "Opening…" else "Enter demo", enabled = !locked && !validating) {
                 validating = true
             }
             LaunchedEffect(validating) {
@@ -105,7 +111,7 @@ fun LoginScreen() {
             }
         }
         Sub("Portal ID ${portal.ifBlank { "189" }} · CurTrack dash cams & GPS", Modifier.fillMaxWidth(), align = TextAlign.Center)
-        Sub("Mock build: password is “dashcam” until the platform API is connected.", Modifier.fillMaxWidth().alpha(0.6f), align = TextAlign.Center)
+        Sub("Demo password is “dashcam”. The designed screens switch to live data once the platform API is connected.", Modifier.fillMaxWidth().alpha(0.6f), align = TextAlign.Center)
         Spacer(Modifier.weight(1f))
     }
 }
