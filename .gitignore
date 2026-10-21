@@ -4,3 +4,8 @@ local.properties
 .idea/
 *.iml
 .DS_Store
+
+# signing key lives outside the repo (GitHub secrets / local copy only)
+app/curtrack-release.jks
+keystore.properties
+*.jks

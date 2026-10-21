@@ -23,6 +23,16 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
+      - name: Restore signing key from secrets
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 -d > app/curtrack-release.jks
+          printf 'storeFile=curtrack-release.jks\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' "$KEYSTORE_PASSWORD" "$KEY_ALIAS" "$KEY_PASSWORD" > keystore.properties
+
       - name: Build signed release APK
         run: ./gradlew assembleRelease --no-daemon --stacktrace
 

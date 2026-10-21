@@ -41,6 +41,13 @@ Faster alternative once set up: open the Terminal tab in Android Studio and run 
 For every later release: bump `versionCode` (+1) and `versionName` in `app/build.gradle.kts`, rebuild, upload the new
 APK and `version.json`. Phones that already have the app will show an "Update available" card on Home.
 
+## Building on GitHub (no Android Studio needed)
+
+The repository has a workflow (`.github/workflows/build-apk.yml`) that builds the signed APK on every push to `main`.
+The signing key is NOT in the repository: it is stored in the repository's **Settings → Secrets and variables → Actions** as
+`KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD`. The finished APK and its SHA-256 are in the run's
+**Artifacts** (`curtrack-apk`). Bump `versionCode`/`versionName`, push, download.
+
 ## Things to keep safe
 
 - `app/curtrack-release.jks` + `keystore.properties` — **the signing key**. Back it up offline. Never share it. If it is
