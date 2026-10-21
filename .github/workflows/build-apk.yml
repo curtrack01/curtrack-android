@@ -5,6 +5,9 @@ on:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -48,3 +51,16 @@ jobs:
           name: curtrack-apk
           path: out/
           if-no-files-found: error
+
+      - name: Publish as a GitHub Release (permanent download link)
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VER=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)
+          CODE=$(grep -oP 'versionCode = \K[0-9]+' app/build.gradle.kts)
+          TAG="v${VER}-${CODE}"
+          gh release delete "$TAG" -y --cleanup-tag 2>/dev/null || true
+          gh release create "$TAG" out/curtrack-${VER}.apk out/curtrack-${VER}.apk.sha256 \
+            --title "CurTrack ${VER} (build ${CODE})" \
+            --notes "Direct-install build. Open the .apk link on an Android phone to install."
