@@ -2,7 +2,7 @@
   "versionCode": 104,
   "versionName": "1.4.0",
   "url": "https://github.com/curtrack01/curtrack-android/releases/download/v1.4.0-104/curtrack-1.4.0.apk",
-  "sha256": "dd3f78babd664b9692f3cca63dab317537b1924af85da61c00323f6c5e2835b7",
+  "sha256": "990bfe5f94392e2d7371476a47d56ee80c60c7167ca2c87836b97f6cf0a340d8",
   "notes": "Clear light map, your location and Go to vehicle on the Live map, PDF reports you can send to WhatsApp.",
   "mandatory": false
 }

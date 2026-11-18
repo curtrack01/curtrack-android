@@ -3,6 +3,7 @@ name: Build CurTrack APK
 on:
   push:
     branches: [main]
+    paths-ignore: ["version.json", "**.md", "broker/**", "design/**"]
   workflow_dispatch:
 
 permissions:
@@ -63,3 +64,20 @@ jobs:
           gh release create "$TAG" out/curtrack-${VER}.apk out/curtrack-${VER}.apk.sha256 \
             --title "CurTrack ${VER} (build ${CODE})" \
             --notes "Direct-install build. Open the .apk link on an Android phone to install."
+
+      - name: Write version.json for the in-app updater (always matches the APK just published)
+        if: github.ref == 'refs/heads/main'
+        run: |
+          VER=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)
+          CODE=$(grep -oP 'versionCode = \K[0-9]+' app/build.gradle.kts)
+          SHA=$(cut -d' ' -f1 out/curtrack-${VER}.apk.sha256)
+          NOTES=$(python3 -c 'import json; print(json.load(open("version.json")).get("notes",""))' 2>/dev/null || true)
+          python3 - "$VER" "$CODE" "$SHA" "$NOTES" <<'PY'
+          import json, sys
+          ver, code, sha, notes = sys.argv[1:5]
+          json.dump({"versionCode": int(code), "versionName": ver,
+                     "url": f"https://github.com/curtrack01/curtrack-android/releases/download/v{ver}-{code}/curtrack-{ver}.apk",
+                     "sha256": sha, "notes": notes, "mandatory": False}, open("version.json", "w"), indent=2)
+          PY
+          git config user.name "CurTrack build" && git config user.email "gps@curtrack.com"
+          git add version.json && (git diff --cached --quiet || git commit -m "version.json for ${VER} (build ${CODE}) [skip ci]") && git push
