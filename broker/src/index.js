@@ -1,3 +1,4 @@
+import { ADMIN_HTML } from "./admin.js";
 /**
  * CurTrack broker — Cloudflare Worker.
  *
@@ -127,16 +128,36 @@ function classifyEvent(name = "") {
   return "IGNITION";
 }
 
-/* ───────── auth ───────── */
-function loadUsers(env) { try { return JSON.parse(env.USERS_JSON || "[]"); } catch { return []; } }
+/* ───────── user store (Cloudflare KV; seeded once from the USERS_JSON secret) ───────── */
+async function loadUsers(env) {
+  if (env.USERS) {
+    const raw = await env.USERS.get("users");
+    if (raw) { try { return JSON.parse(raw); } catch { /* fall through */ } }
+    const seed = (() => { try { return JSON.parse(env.USERS_JSON || "[]"); } catch { return []; } })();
+    await env.USERS.put("users", JSON.stringify(seed));
+    return seed;
+  }
+  try { return JSON.parse(env.USERS_JSON || "[]"); } catch { return []; }
+}
+async function saveUsers(env, users) { if (!env.USERS) throw new HttpError(500, "User store not configured"); await env.USERS.put("users", JSON.stringify(users)); }
+const findUser = (users, id) => users.find((u) => u.userId.toLowerCase() === String(id || "").trim().toLowerCase());
+const randomSalt = () => [...crypto.getRandomValues(new Uint8Array(16))].map((b) => b.toString(16).padStart(2, "0")).join("");
+const publicUser = (u) => ({ userId: u.userId, firstName: u.firstName || "", portalId: u.portalId || "189", phone: u.phone || "", email: u.email || "", units: u.units || [], driverIds: u.driverIds || [],
+  hasPassword: !!u.passwordHash, activation: u.activation ? { expiresAt: u.activation.expiresAt } : null, createdAt: u.createdAt || null, lastLoginAt: u.lastLoginAt || null });
+
 async function requireUser(req, env) {
   const auth = req.headers.get("authorization") || "";
   const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
   const payload = await verifyToken(token, env.SESSION_SECRET);
   if (!payload) throw new HttpError(401, "Session expired — please sign in again");
-  const user = loadUsers(env).find((u) => u.userId.toLowerCase() === payload.sub.toLowerCase());
+  const user = findUser(await loadUsers(env), payload.sub);
   if (!user) throw new HttpError(401, "Unknown user");
   return user;
+}
+function requireAdmin(req, env) {
+  const auth = req.headers.get("authorization") || "";
+  const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+  if (!env.ADMIN_TOKEN || !token || !timingSafeEqual(token, env.ADMIN_TOKEN)) throw new HttpError(401, "Admin token required");
 }
 const unitFor = (user, esn) => { const u = (user.units || []).find((x) => String(x.esn) === String(esn)); if (!u) throw new HttpError(404, "Unit not on this account"); return u; };
 
@@ -155,12 +176,27 @@ async function handle(req, env, ctx) {
     return new Response(await r.text(), { status: r.status, headers: { "content-type": "application/json", "cache-control": "public, max-age=300" } });
   }
 
+  if (path === "/auth/activate" && req.method === "POST") {
+    // First login: user ID + one-time code (from the dealer) → set own password.
+    const { userId = "", code = "", password = "" } = await req.json().catch(() => ({}));
+    const users = await loadUsers(env); const user = findUser(users, userId);
+    if (!user || !user.activation) return err(401, "No activation code for this user ID — ask CurTrack for one");
+    if (user.activation.expiresAt < Date.now()) return err(401, "This code has expired — ask CurTrack for a new one");
+    if (!timingSafeEqual(await pbkdf2(String(code).replace(/\s+/g, ""), user.activation.salt), user.activation.hash)) return err(401, "Incorrect code");
+    if (String(password).length < 6) return err(400, "Password must be at least 6 characters");
+    user.salt = randomSalt(); user.passwordHash = await pbkdf2(String(password), user.salt); delete user.activation; user.activatedAt = Date.now();
+    await saveUsers(env, users);
+    return json({ ok: true, userId: user.userId });
+  }
   if (path === "/auth/login" && req.method === "POST") {
     const body = await req.json().catch(() => ({}));
     const { userId = "", password = "", portalId = "" } = body;
-    const user = loadUsers(env).find((u) => u.userId.toLowerCase() === String(userId).trim().toLowerCase());
-    const hash = user ? await pbkdf2(String(password), user.salt) : await pbkdf2("x", "00");
-    if (!user || !timingSafeEqual(hash, user.passwordHash)) return err(401, "Incorrect user ID or password");
+    const users = await loadUsers(env);
+    const user = findUser(users, userId);
+    if (user && !user.passwordHash && user.activation) return err(403, "First login: tap “I have a code” and enter the code CurTrack gave you");
+    const hash = user && user.salt ? await pbkdf2(String(password), user.salt) : await pbkdf2("x", "00");
+    if (!user || !user.passwordHash || !timingSafeEqual(hash, user.passwordHash)) return err(401, "Incorrect user ID or password");
+    user.lastLoginAt = Date.now(); ctx.waitUntil(saveUsers(env, users).catch(() => {}));
     if (portalId && user.portalId && String(portalId) !== String(user.portalId)) return err(401, "Wrong portal ID for this user");
     const hours = Number(env.SESSION_HOURS || 720);
     const exp = Date.now() + hours * 3600 * 1000;
@@ -172,6 +208,58 @@ async function handle(req, env, ctx) {
       driverIds: user.driverIds || [],
       capabilities: { commands: false, geofences: false, reports: false, platformUrl: env.PLATFORM_URL },
     });
+  }
+
+  /* ───── admin: client management (Bearer ADMIN_TOKEN) ───── */
+  if (path === "/admin" || path === "/admin/") return new Response(ADMIN_HTML, { headers: { "content-type": "text/html; charset=utf-8" } });
+  if (path.startsWith("/admin/")) {
+    requireAdmin(req, env);
+    const users = await loadUsers(env);
+    let am;
+    if (path === "/admin/users" && req.method === "GET") return json({ users: users.map(publicUser) });
+    if (path === "/admin/check" && req.method === "GET") return json({ ok: true });
+    if ((am = path.match(/^\/admin\/units\/([^/]+)$/)) && req.method === "GET") {
+      // Live check of an ESN against the platform: does the key see it, and what is its nickname?
+      try { const r = await itrack(env, `/v2/units/${encodeURIComponent(decodeURIComponent(am[1]))}`, {}, 0); const rec = Array.isArray(r) ? r[r.length - 1] : r;
+        return json(rec && rec.esn ? { found: true, nickName: rec.nickName, unitType: rec.unitType, time: rec.time, geolocation: rec.geolocation } : { found: false }); }
+      catch (e) { return json({ found: false, error: e.message }); }
+    }
+    if ((am = path.match(/^\/admin\/users\/([^/]+)$/))) {
+      const id = decodeURIComponent(am[1]);
+      if (req.method === "PUT") {
+        const b = await req.json().catch(() => ({}));
+        if (!/^[A-Za-z0-9._@+-]{2,64}$/.test(id)) return err(400, "User ID: letters, digits, . _ @ + - only");
+        let u = findUser(users, id);
+        if (!u) { u = { userId: id, createdAt: Date.now(), portalId: "189" }; users.push(u); }
+        if (b.firstName != null) u.firstName = String(b.firstName).slice(0, 60);
+        if (b.phone != null) u.phone = String(b.phone).slice(0, 30);
+        if (b.email != null) u.email = String(b.email).slice(0, 120);
+        if (b.portalId != null) u.portalId = String(b.portalId).slice(0, 10);
+        if (Array.isArray(b.units)) u.units = b.units.filter((x) => x && x.esn).map((x) => ({ esn: String(x.esn).trim(), name: String(x.name || "").slice(0, 60), plate: String(x.plate || "").slice(0, 20), group: String(x.group || "My vehicles").slice(0, 40), driverId: x.driverId ? String(x.driverId) : null, hasDashcam: !!x.hasDashcam }));
+        if (Array.isArray(b.driverIds)) u.driverIds = b.driverIds.map(String);
+        await saveUsers(env, users);
+        return json(publicUser(u));
+      }
+      if (req.method === "DELETE") { const i = users.findIndex((x) => x.userId.toLowerCase() === id.toLowerCase()); if (i < 0) return err(404, "No such user"); users.splice(i, 1); await saveUsers(env, users); return json({ ok: true }); }
+    }
+    if ((am = path.match(/^\/admin\/users\/([^/]+)\/code$/)) && req.method === "POST") {
+      // Issue a one-time activation code (7 days). The dealer passes it to the client; the client sets their own password in the app.
+      const u = findUser(users, decodeURIComponent(am[1])); if (!u) return err(404, "No such user");
+      const code = String(crypto.getRandomValues(new Uint32Array(1))[0] % 1000000).padStart(6, "0");
+      const salt = randomSalt();
+      u.activation = { salt, hash: await pbkdf2(code, salt), expiresAt: Date.now() + 7 * 86400000 };
+      delete u.passwordHash; delete u.salt; // forces the code flow (also works as a password reset)
+      await saveUsers(env, users);
+      return json({ userId: u.userId, code, expiresAt: u.activation.expiresAt });
+    }
+    if ((am = path.match(/^\/admin\/users\/([^/]+)\/password$/)) && req.method === "POST") {
+      const u = findUser(users, decodeURIComponent(am[1])); if (!u) return err(404, "No such user");
+      const { password = "" } = await req.json().catch(() => ({}));
+      if (String(password).length < 6) return err(400, "Password must be at least 6 characters");
+      u.salt = randomSalt(); u.passwordHash = await pbkdf2(String(password), u.salt); delete u.activation;
+      await saveUsers(env, users); return json({ ok: true });
+    }
+    return err(404, "No such admin endpoint");
   }
 
   const user = await requireUser(req, env);

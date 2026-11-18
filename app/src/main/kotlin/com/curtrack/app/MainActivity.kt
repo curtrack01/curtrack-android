@@ -54,6 +54,7 @@ private fun AppNav(nav: NavHostController, state: AppState) {
     NavHost(nav, startDestination = start) {
         composable("login") { LoginScreen() }
         composable("forgot") { ForgotScreen() }
+        composable("activate?user={user}", arguments = listOf(androidx.navigation.navArgument("user") { nullable = true; defaultValue = null })) { ActivateScreen() }
         composable("permissions") { PermissionsScreen() }
         composable("home") { HomeScreen() }
         composable("live") { LiveScreen() }

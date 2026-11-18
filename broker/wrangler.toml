@@ -10,3 +10,7 @@ APP_VERSION_URL = "https://raw.githubusercontent.com/curtrack01/curtrack-android
 SESSION_HOURS = "720"
 # Event names polled for the Alerts screen (iTrackGPS /eventapi EventName values). Adjust to the names your units report.
 ALERT_EVENTS = "Ignition On,Ignition Off,Speeding,Over Speed,Harsh Braking,Harsh Acceleration,Impact,Geofence In,Geofence Out,Idle,Low Battery,Power Disconnect,Tow"
+
+[[kv_namespaces]]
+binding = "USERS"
+id = "0afd3e15d3324b88b841ce6844549b11"

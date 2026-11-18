@@ -68,7 +68,7 @@ fun LoginScreen() {
             val r = Broker.login(user.trim(), pass, portal.trim().ifBlank { "189" })
             state.startLive(r)
             nav.navigate(if (state.onboardingDone) "home" else "permissions") { popUpTo("login") { inclusive = true } }
-        } catch (e: BrokerException) { error = e.message } catch (e: Exception) { error = "Can't reach CurTrack — check your connection." }
+        } catch (e: BrokerException) { if (e.status == 403) { nav.navigate("activate?user=" + java.net.URLEncoder.encode(user.trim(), "UTF-8")) } else error = e.message } catch (e: Exception) { error = "Can't reach CurTrack — check your connection." }
         busy = false
     }
 
@@ -90,7 +90,7 @@ fun LoginScreen() {
             SwitchRow("Keep me signed in", state.keepSignedIn) { state.keepSignedIn = it; state.save() }
             PrimaryButton(if (busy) "Signing in…" else "Log in", enabled = !busy && user.isNotBlank() && pass.isNotBlank()) { attempt++ }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterHorizontally)) {
-                Sub("Forgot ID", Modifier.clickableText { nav.navigate("forgot") })
+                Sub("I have a code", Modifier.clickableText { nav.navigate("activate?user=" + java.net.URLEncoder.encode(user.trim(), "UTF-8")) }, color = C.amber)
                 Sub("Forgot password", Modifier.clickableText { nav.navigate("forgot") })
             }
         }
@@ -122,7 +122,7 @@ fun ForgotScreen() {
         Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Kicker("CurTrack", color = C.amber)
             Text("Reset your password", color = C.ink, fontFamily = SansFamily, fontSize = 32.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.02).em, lineHeight = 35.sp)
-            Sub("Enter your User ID and Portal ID. We'll send a reset code to the phone number or email your dealer registered.")
+            Sub("Contact CurTrack and we'll send you a new 6-digit code on WhatsApp. Then tap “I have a code” on the login screen to choose a new password.")
         }
         Card(gap = 14.dp) {
             Field(user, { user = it }, "User ID", leading = { Icon(Icons.car, null, Modifier.size(20.dp), tint = C.dim) })
@@ -201,5 +201,44 @@ private fun PermRow(icon: androidx.compose.ui.graphics.vector.ImageVector, tint:
             Gap(4.dp)
             Pill(pill, text = pillColor, border = pillColor, upper = false)
         }
+    }
+}
+
+
+/** First login (or reset): user ID + 6-digit code from CurTrack → choose own password. */
+@Composable
+fun ActivateScreen() {
+    val nav = LocalNav.current
+    val entry = nav.currentBackStackEntry
+    var user by remember { mutableStateOf(entry?.arguments?.getString("user") ?: "") }
+    var code by remember { mutableStateOf("") }
+    var pass by remember { mutableStateOf("") }
+    var pass2 by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf<String?>(null) }
+    var busy by remember { mutableStateOf(false) }
+    var attempt by remember { mutableIntStateOf(0) }
+    val toast = toast()
+    LaunchedEffect(attempt) {
+        if (attempt == 0) return@LaunchedEffect
+        busy = true; error = null
+        try { Broker.activate(user.trim(), code.trim(), pass); toast("Password set — you can log in now"); nav.popBackStack() }
+        catch (e: BrokerException) { error = e.message } catch (e: Exception) { error = "Can't reach CurTrack — check your connection." }
+        busy = false
+    }
+    Screen(onBack = { nav.popBackStack() }, bodyPadding = PaddingValues(horizontal = Space.s9, vertical = 10.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Kicker("First login", color = C.amber)
+            Text("Enter your code", color = C.ink, fontFamily = SansFamily, fontSize = 32.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.02).em, lineHeight = 35.sp)
+            Sub("CurTrack sent you a 6-digit code with your User ID. Enter both and choose a password you'll use from now on.")
+        }
+        Card(gap = 14.dp) {
+            Field(user, { user = it }, "User ID", leading = { Icon(Icons.car, null, Modifier.size(20.dp), tint = C.dim) })
+            Field(code, { if (it.length <= 7) code = it.filter(Char::isDigit) }, "6-digit code", leading = { Mono("#", 11) }, error = error?.contains("code", true) == true)
+            Field(pass, { pass = it }, "New password (6+ characters)", leading = { Mono("••", 11) }, password = true)
+            Field(pass2, { pass2 = it }, "Repeat password", leading = { Mono("••", 11) }, password = true, error = pass2.isNotEmpty() && pass2 != pass)
+            error?.let { Sub(it, color = C.red) }
+            PrimaryButton(if (busy) "Setting up…" else "Set password", enabled = !busy && user.isNotBlank() && code.length == 6 && pass.length >= 6 && pass == pass2) { attempt++ }
+        }
+        Sub("No code yet? Ask CurTrack: ${BuildConfig.SUPPORT_PHONE} · ${BuildConfig.SUPPORT_EMAIL}", Modifier.fillMaxWidth(), align = TextAlign.Center)
     }
 }

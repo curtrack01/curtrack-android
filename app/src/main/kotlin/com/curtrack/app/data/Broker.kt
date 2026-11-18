@@ -50,6 +50,10 @@ object Broker {
         return LoginResult(j.getString("token"), j.getLong("expiresAt"), u.getString("userId"), u.optString("firstName", u.getString("userId")), u.optString("portalId", "189"), units, drivers, j.optJSONObject("capabilities")?.optString("platformUrl"))
     }
 
+    suspend fun activate(userId: String, code: String, password: String) {
+        call("/auth/activate", body = JSONObject().put("userId", userId).put("code", code).put("password", password))
+    }
+
     suspend fun units(token: String): List<Unit> = JSONObject(call("/units", token)).getJSONArray("units").map { it.toUnit() }
 
     suspend fun history(token: String, esn: String, from: Long, to: Long): List<TrailPoint> =
