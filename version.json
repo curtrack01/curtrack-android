@@ -1,8 +1,8 @@
 {
-  "versionCode": 103,
-  "versionName": "1.3.0",
-  "url": "https://github.com/curtrack01/curtrack-android/releases/download/v1.3.0-103/curtrack-1.3.0.apk",
-  "sha256": "9a4e5c4a089a470b3b34a4a4bac4bc6eb6fba40e264d0b58f29c6e9ad4d79683",
-  "notes": "Clearer maps, in-app directions to your vehicle, and geofences with entry/exit alerts.",
+  "versionCode": 104,
+  "versionName": "1.4.0",
+  "url": "https://github.com/curtrack01/curtrack-android/releases/download/v1.4.0-104/curtrack-1.4.0.apk",
+  "sha256": "dd3f78babd664b9692f3cca63dab317537b1924af85da61c00323f6c5e2835b7",
+  "notes": "Clear light map, your location and Go to vehicle on the Live map, PDF reports you can send to WhatsApp.",
   "mandatory": false
 }
